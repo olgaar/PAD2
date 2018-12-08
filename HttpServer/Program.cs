@@ -17,22 +17,7 @@ namespace HTTPServer
     class Client
     {
         // Отправка страницы с ошибкой
-        private void SendError(TcpClient Client, int Code)
-        {
-            // Получаем строку вида "200 OK"
-            // HttpStatusCode хранит в себе все статус-коды HTTP/1.1
-            string CodeStr = Code.ToString() + " " + ((HttpStatusCode)Code).ToString();
-            // Код простой HTML-странички
-            string Html = "<html><body><h1>" + CodeStr + "</h1></body></html>";
-            // Необходимые заголовки: ответ сервера, тип и длина содержимого. После двух пустых строк - само содержимое
-            string Str = "HTTP/1.1 " + CodeStr + "\nContent-type: text/html\nContent-Length:" + Html.Length.ToString() + "\n\n" + Html;
-            // Приведем строку к виду массива байт
-            byte[] Buffer = Encoding.ASCII.GetBytes(Str);
-            // Отправим его клиенту
-            Client.GetStream().Write(Buffer, 0, Buffer.Length);
-            // Закроем соединение
-            Client.Close();
-        }
+        
         public StringBuilder BuildAllMooviesPage(List<Moovie> moovies)
         {
             var builder = new StringBuilder();
@@ -42,7 +27,7 @@ namespace HTTPServer
                 builder.AppendFormat("<li>Id: {0}, Name: {1}, Year: {2}, Genre: {3}</li>",
                 moovie.Id, moovie.Name, moovie.Year, moovie.Genre);
             }
-            builder.Append(@"</ul><form><input type=""text"" size=""40""><input type=""submit"" value=""Submit""></form></body></html>");
+            builder.Append(@"</ul></body></html>");
             return builder;
         }
 
@@ -51,10 +36,7 @@ namespace HTTPServer
 
         {
             var builder = new StringBuilder();
-            //string text = File.ReadAllText(@"C:\Users\Olga\Desktop\index.html");
-            //<form method=\"post\">First name: <input type=\"text\" name=\"firstname\" /><br />Last name: <input type=\"text\" name=\"lastname\" /><input type=\"submit\" value=\"Submit\" /></form>
-            //builder.Append("<html><body><h1>It works!</h1><form method=\"post\">Mongo json: <input type=\"text\" name=\"mongoJson\" /><br /><input type=\"submit\" value=\"Submit\" /></form></body></html>");
-            builder.Append("<html><body><h1>It works!</h1><form method=\"post\"> New moovie: <input type=\"text\" name=\"name\" /><br /><input type=\"text\" name=\"year\" /><br /><input type=\"text\" name=\"genre\" /><br /><input type=\"submit\" value=\"Submit\" /></form></body></html>");
+            builder.Append("<html><body><h1>It works!</h1><form method=\"post\"> Add new moovie to DB <br />Name:  <input type=\"text\" name=\"name\" /><br />Year:   <input type=\"text\" name=\"year\" /><br />Genre: <input type=\"text\" name=\"genre\" /><br /><input type=\"submit\" value=\"Submit\" /></form></body></html>");
 
             return builder;
         }
@@ -66,7 +48,7 @@ namespace HTTPServer
                 builder.AppendFormat("<li>Id: {0}, Name: {1}, Year: {2}, Genre: {3}</li>",
                 moovie.Id, moovie.Name, moovie.Year, moovie.Genre);
             
-            builder.Append(@"</ul><form><input type=""text"" size=""40""><input type=""submit"" value=""""></form></body></html>");
+            builder.Append(@"</ul></body></html>");
             return builder;
         }
         public static string GetRequestPostData(HttpListenerRequest request)
@@ -86,60 +68,41 @@ namespace HTTPServer
 
         public IMongoCollection<Moovie> GetMongoCollection()
         {
-            const string connectionString = "mongodb://localhost:27017";
+            const string connectionString = "mongodb://127.0.0.1:27017";
 
             // Create a MongoClient object by using the connection string
             var client = new MongoClient(connectionString);
-
-            //Use the MongoClient to access the server
             var database = client.GetDatabase("moovies");
 
             //get mongodb collection
             var collection = database.GetCollection<Moovie>("moovies");
-            //collection.InsertOneAsync(new Moovie { Name = "Jack" });
             return collection;
         }
 
-        // Конструктор класса. Ему нужно передавать принятого клиента от TcpListener
+        // Конструктор класса. Ему нужно передавать принятого клиента от HttpListener
         public Client(HttpListenerContext context)
         {
             
             var builder = new StringBuilder();
             Console.WriteLine($"{context.Request.HttpMethod}: {context.Request.Url}");
-            Match ReqMatch = Regex.Match(context.Request.Url.PathAndQuery, @"mongo/+");
-            if (context.Request.Url.PathAndQuery.EndsWith("/mongo"))
+            Match ReqMatch = Regex.Match(context.Request.Url.PathAndQuery, @"movies/+");
+            if (context.Request.Url.PathAndQuery.EndsWith("/movies"))
             {
-                string connect = "mongodb://localhost:27017";
-                var client = new MongoClient(connect);
-                var mongoDatabase = client.GetDatabase("moovies");
-                var collection = mongoDatabase.GetCollection<Moovie>("moovies").AsQueryable<Moovie>();
-                var moovies = collection.ToList();
-                
-                builder = BuildAllMooviesPage(moovies);
+                var collection = GetMongoCollection();
+                var movies = collection.AsQueryable<Moovie>().ToList();
+                builder = BuildAllMooviesPage(movies);
             }
             else if (!String.IsNullOrEmpty(ReqMatch.Value)){
-                string connect = "mongodb://localhost:27017";
-                var client = new MongoClient(connect);
-                var mongoDatabase = client.GetDatabase("moovies");
-                var collection = mongoDatabase.GetCollection<Moovie>("moovies").AsQueryable<Moovie>();
-                var moovies = collection.ToList();
+                var collection = GetMongoCollection();
+                var movies = collection.AsQueryable<Moovie>().ToList();
+                builder = BuildAllMooviesPage(movies);
                 var url = context.Request.Url.ToString();
-                var moovieId = Regex.Split(url, "/mongo/")[1];
-                var moovie = moovies.Find(x => x.Id.ToString().Contains(moovieId));
-                if (moovie!=null) builder = BuildSingleMooviePage(moovie);
+                var movieId = Regex.Split(url, "/movies/")[1];
+                var movie = movies.Find(x => x.Id.ToString().Contains(movieId));
+                if (movie!=null) builder = BuildSingleMooviePage(movie);
             }
-            else if (context.Request.Url.PathAndQuery.EndsWith("/post"))
+            else if (context.Request.Url.PathAndQuery.EndsWith("/addMovie"))
             {
-                const string connectionString = "mongodb://localhost:27017";
-
-                // Create a MongoClient object by using the connection string
-                var client = new MongoClient(connectionString);
-
-                //Use the MongoClient to access the server
-                var database = client.GetDatabase("moovies");
-
-                //get mongodb collection
-                var collection = database.GetCollection<Moovie>("moovies");
                 builder = BuildPostPage();
             }
             HttpListenerRequest request = context.Request;
@@ -159,6 +122,7 @@ namespace HTTPServer
 
             byte[] buffer = Encoding.UTF8.GetBytes(builder.ToString());
             response.ContentLength64 = buffer.Length;
+            response.ContentType = "text/html";
             Stream output = response.OutputStream;
             output.Write(buffer, 0, buffer.Length);
             output.Close();
@@ -167,13 +131,13 @@ namespace HTTPServer
 
     class Server
     {
-        HttpListener Listener; // Объект, принимающий TCP-клиентов
+        HttpListener Listener; // Объект, принимающий клиентов
 
         // Запуск сервера
         public Server(int Port)
         {
             Listener = new HttpListener();
-            Listener.Prefixes.Add("http://localhost:8080/");
+            Listener.Prefixes.Add("http://127.0.0.1:8080/");
             Listener.Start();
             Console.WriteLine("Ожидание подключений...");
             
